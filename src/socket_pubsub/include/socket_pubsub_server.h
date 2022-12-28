@@ -2,6 +2,7 @@
 #define SOCKET_PUBSUB_SERVER_H
 
 #include <string>
+#include <memory>
 #include "socket_subscriber_service.h"
 #include "socket_publisher_service.h"
 
@@ -13,8 +14,8 @@ public:
 	void StartPubSubServer();
 	void StopPubSubServer();
 private:
-	SocketPublisherService* socket_publisher_service_;
-	SocketSubscriberService* socket_subscriber_service_;
+	std::shared_ptr<SocketPublisherService> socket_publisher_service_;
+	std::shared_ptr<SocketSubscriberService> socket_subscriber_service_;
 };
 
 #endif /* SOCKET_PUBSUB_SERVER_H */

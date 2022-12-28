@@ -2,8 +2,8 @@
 
 SocketPubSubServer::SocketPubSubServer ()
 {
-	socket_publisher_service_ = new SocketPublisherService();
-	socket_subscriber_service_ = new SocketSubscriberService();
+	socket_publisher_service_ = std::make_shared<SocketPublisherService>();
+	socket_subscriber_service_ = std::make_shared<SocketSubscriberService>();
 }
 
 SocketPubSubServer::~SocketPubSubServer()
