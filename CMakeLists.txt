@@ -28,3 +28,5 @@ endif()
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/modules/")
 
 add_subdirectory(${CMAKE_SOURCE_DIR}/src/socket_pubsub)
+add_subdirectory(${CMAKE_SOURCE_DIR}/src/ipc_pubsub)
+add_subdirectory(${CMAKE_SOURCE_DIR}/src/internal_com)

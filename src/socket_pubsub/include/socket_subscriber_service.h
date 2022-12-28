@@ -17,6 +17,7 @@ private:
 	int server_fd_;
 	std::thread socket_subscriber_service_thread_;
 	bool InitSocketSubscriberService();
+	bool pollIn();
 	static void StartListening(SocketSubscriberService* instance);
 };
 

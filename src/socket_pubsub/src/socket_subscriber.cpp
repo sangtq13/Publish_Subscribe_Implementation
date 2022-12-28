@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
+#include <poll.h>
 #include <arpa/inet.h>
 #include <cstring>
 #include <unistd.h>
@@ -19,11 +20,12 @@ SocketSubscriber::SocketSubscriber(std::string topic)
 
 SocketSubscriber::~SocketSubscriber()
 {
+
 	observers.clear();
 	socket_subscriber_thread.join();
 }
 
-bool SocketSubscriber::RegisterObserver(Observer* observer) 
+bool SocketSubscriber::RegisterObserver(std::shared_ptr<Observer> observer) 
 {
 	if (!observer) {
 		std::cout << "Observer is null pointer!" << std::endl;
@@ -34,7 +36,7 @@ bool SocketSubscriber::RegisterObserver(Observer* observer)
 	return true;
 }
 
-bool SocketSubscriber::UnregisterObserver(Observer* observer)
+bool SocketSubscriber::UnregisterObserver(std::shared_ptr<Observer> observer)
 {
 	if (!observer) {
 		std::cout << "Observer is null pointer!" << std::endl;
@@ -64,7 +66,7 @@ bool SocketSubscriber::InitSubscriber()
   this->servaddr.sin_port = htons(0);
   // this->servaddr.sin_addr.s_addr = INADDR_ANY;
   inet_aton("127.0.0.1", &this->servaddr.sin_addr);
-  fcntl(this->server_fd_, F_SETFL, O_NONBLOCK);
+  // fcntl(this->server_fd_, F_SETFL, O_NONBLOCK);
   if (bind(this->server_fd_, (const struct sockaddr *)&this->servaddr,  
             sizeof(this->servaddr)) < 0 ) 
   { 
@@ -118,9 +120,11 @@ bool SocketSubscriber::UnregisterSubscriber ()
 {
 	SocketMsg unregister_msg;
 	unregister_msg.socket_cmd = SocketCommand::kUnregister;
-	for (int i = 0; i < this->topic_.size(); ++i) {
+	int i = 0;
+	for (i = 0; i < this->topic_.size(); ++i) {
 		unregister_msg.topic[i] = this->topic_[i];
 	}
+	unregister_msg.topic[i] = '\0';
 
 	char msg[sizeof(unregister_msg)+1];
 	memcpy(&msg, &unregister_msg, sizeof(unregister_msg));
@@ -145,6 +149,7 @@ void SocketSubscriber::Notify (void* data)
 
 bool SocketSubscriber::StopSubscriber() {
 	std::cout << "Stop Subscriber!" << std::endl;
+	this->UnregisterSubscriber();
 	this->is_stop_ = true;
 	if (close(this->server_fd_) == -1) {
 		std::cout << "Can not stop Subscriber!" << std::endl;
@@ -152,6 +157,27 @@ bool SocketSubscriber::StopSubscriber() {
 	}
 
 	return true;
+}
+
+bool SocketSubscriber::pollIn()
+{
+  bool returnValue{false};
+  struct pollfd pfd;
+  pfd.fd = this->server_fd_;
+  pfd.events = POLLIN;
+
+  int pollReturn{-1};
+  pollReturn = poll(&pfd, 1, 1000);
+
+  if (pollReturn > 0)
+  {
+    if (pfd.revents & POLLIN)
+    {
+        returnValue = true;
+    }
+  }
+
+  return returnValue;
 }
 
 void SocketSubscriber::SubscriberLoop(SocketSubscriber* instance)
@@ -162,39 +188,41 @@ void SocketSubscriber::SubscriberLoop(SocketSubscriber* instance)
 	char buffer[msg_size];
 	int nbytes;
 	while (!instance->is_stop_) {
-		nbytes = recvfrom(instance->server_fd_, (char *)buffer, msg_size,  
-                MSG_WAITALL, ( struct sockaddr *) &cliaddr, 
-                &len);
-		if (nbytes > 0) {
-			SocketCommand* cmd = (SocketCommand*) buffer;
-      char* ptr = buffer + sizeof(SocketCommand);
-      char topic_buffer[32];
-      for (int i = 0; i < 32; ++i) {
-        topic_buffer[i] = ptr[i];
-      }
-      std::string topic(topic_buffer);
-      // std::cout << "cmd >> " << *cmd << std::endl;
-      // std::cout << "Receive topic >> " << topic << std::endl;
-      if (topic == instance->topic_) {
-	      switch(*cmd) {
-	        case SocketCommand::kSubcribe:
-	        {
-	          ptr = ptr + sizeof(topic_buffer);
-				    uint32_t* msg_size = (uint32_t*)ptr;
-				    printf("Receive message from publisher %s with size %d\n", instance->topic_.c_str(), *msg_size);
-				    ptr = ptr + sizeof(uint32_t);
-				    char data[*msg_size+1];
-				    for (int i = 0; i < (*msg_size); ++i) {
-				    	data[i] = ptr[i];
-				    }
-				    instance->Notify((void*) data);
-	          break;
-	        }
-	        default:
-	          std::cout << "Doesn't support this command for Subscriber!" << std::endl;
-	          break;
+		if (instance->pollIn()) {
+			nbytes = recvfrom(instance->server_fd_, (char *)buffer, msg_size,  
+	                MSG_WAITALL, ( struct sockaddr *) &cliaddr, 
+	                &len);
+			if (nbytes > 0) {
+				SocketCommand* cmd = (SocketCommand*) buffer;
+	      char* ptr = buffer + sizeof(SocketCommand);
+	      char topic_buffer[32];
+	      for (int i = 0; i < 32; ++i) {
+	        topic_buffer[i] = ptr[i];
 	      }
-      }
+	      std::string topic(topic_buffer);
+	      // std::cout << "cmd >> " << *cmd << std::endl;
+	      // std::cout << "Receive topic >> " << topic << std::endl;
+	      if (topic == instance->topic_) {
+		      switch(*cmd) {
+		        case SocketCommand::kSubcribe:
+		        {
+		          ptr = ptr + sizeof(topic_buffer);
+					    uint32_t* msg_size = (uint32_t*)ptr;
+					    printf("Receive message from publisher %s with size %d\n", instance->topic_.c_str(), *msg_size);
+					    ptr = ptr + sizeof(uint32_t);
+					    char data[*msg_size+1];
+					    for (int i = 0; i < (*msg_size); ++i) {
+					    	data[i] = ptr[i];
+					    }
+					    instance->Notify((void*) data);
+		          break;
+		        }
+		        default:
+		          std::cout << "Doesn't support this command for Subscriber!" << std::endl;
+		          break;
+		      }
+	      }
+			}
 		}
 	}
 }

@@ -6,34 +6,25 @@
 
 SocketPubSub::SocketPubSub()
 {
-	socket_pubsub_server = new SocketPubSubServer();
+	socket_pubsub_server = std::make_shared<SocketPubSubServer>();
 	// socket_pubsub_server->StartPubSubServer();
 }
 
 SocketPubSub::~SocketPubSub()
 {
-	for (auto it = sub_lists.begin(); it != sub_lists.end(); ++it)
-	{
-		delete it->second;
-	}
 	sub_lists.clear();
-
-	for (auto it = pub_lists.begin(); it != pub_lists.end(); ++it)
-	{
-		delete it->second;
-	}
 	pub_lists.clear();
 }
 
 void SocketPubSub::RegisterPublisher(std::string topic)
 {
-	SocketPublisher* publisher = new SocketPublisher(topic);
+	std::shared_ptr<SocketPublisher> publisher = std::make_shared<SocketPublisher>(topic);
 	pub_lists[topic] = publisher;
 }
 
 void SocketPubSub::RegisterSubscriber(std::string topic)
 {
-	SocketSubscriber* subscriber = new SocketSubscriber(topic);
+	std::shared_ptr<SocketSubscriber> subscriber = std::make_shared<SocketSubscriber>(topic);
 	subscriber->RegisterSubscriber();
 	sub_lists[topic] = subscriber;
 }
@@ -56,7 +47,11 @@ void SocketPubSub::StartPubSubServer() {
 	socket_pubsub_server->StartPubSubServer();
 }
 
-bool SocketPubSub::RegisterObserver(std::string topic, Observer* observer)
+void SocketPubSub::StopPubSubServer() {
+	socket_pubsub_server->StopPubSubServer();
+}
+
+bool SocketPubSub::RegisterObserver(std::string topic, std::shared_ptr<Observer> observer)
 {
 	if (sub_lists.find(topic) != sub_lists.end()) 
 	{
@@ -85,10 +80,9 @@ bool SocketPubSub::Publish(std::string topic, void* msg, uint32_t msg_size)
 	return true;
 }
 
-void SocketPubSub::Stop()
+void SocketPubSub::StopSubscribers()
 {
 	for (auto it = sub_lists.begin(); it != sub_lists.end(); ++it) {
 		it->second->StopSubscriber();
 	}
-	socket_pubsub_server->StopPubSubServer();
 }

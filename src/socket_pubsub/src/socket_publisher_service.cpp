@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/socket.h>
+#include <poll.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <netinet/in.h>
@@ -69,7 +70,7 @@ bool SocketPublisherService::InitSocketPublisherService()
   inet_aton("127.0.0.1", &servaddr.sin_addr);
   servaddr.sin_port = htons(10002);
 
-  fcntl(this->server_fd_, F_SETFL, O_NONBLOCK);
+  // fcntl(this->server_fd_, F_SETFL, O_NONBLOCK);
       
   // Bind the socket with the server address 
   if (bind(server_fd_, (const struct sockaddr *)&servaddr,  
@@ -84,6 +85,27 @@ bool SocketPublisherService::InitSocketPublisherService()
   return true;
 }
 
+bool SocketPublisherService::pollIn()
+{
+  bool returnValue{false};
+  struct pollfd pfd;
+  pfd.fd = this->server_fd_;
+  pfd.events = POLLIN;
+
+  int pollReturn{-1};
+  pollReturn = poll(&pfd, 1, 1000);
+
+  if (pollReturn > 0)
+  {
+    if (pfd.revents & POLLIN)
+    {
+        returnValue = true;
+    }
+  }
+
+  return returnValue;
+}
+
 void SocketPublisherService::StartListening(SocketPublisherService* instance)
 {
   struct sockaddr_in cliaddr;
@@ -93,47 +115,49 @@ void SocketPublisherService::StartListening(SocketPublisherService* instance)
 	int nbytes;
 
 	while (!instance->is_stop_) {
-		nbytes = recvfrom(instance->server_fd_, (char *)buffer, msg_size,  
-                MSG_WAITALL, ( struct sockaddr *) &cliaddr, 
-                &len);
-		if (nbytes > 0) {
-			SocketCommand* cmd = (SocketCommand*) buffer;
-      std::cout << "cmd >> " << *cmd << std::endl;
-      char* ptr = buffer + sizeof(SocketCommand);
-      char topic_buffer[32];
-      for (int i = 0; i < 32; ++i) {
-        topic_buffer[i] = ptr[i];
-      }
-      std::string topic(topic_buffer);
-      std::cout << "topic >> " << topic << std::endl;
-      switch(*cmd) {
-        case SocketCommand::kPublish:
-        {
-          std::list<struct sockaddr_in*>* subscriber_lists = SocketFilter::GetSubscribers(topic);
-          *cmd = SocketCommand::kSubcribe;
-          if (subscriber_lists != nullptr) {
-            for (auto addr : (*subscriber_lists)) {
-              std::cout << "addr->sin_port >> " << addr->sin_port << std::endl;
-              int n_bytes = sendto(instance->server_fd_, (const char *)buffer, nbytes, 
-                MSG_CONFIRM, (const struct sockaddr *) addr,  
-                    sizeof(sockaddr_in));
-              if (n_bytes == -1) {
-                std::cout << "Socket Publisher Service forward publish message failed!" << std::endl;
-              }
-              else {
-                std::cout << "Socket Publisher Service forward publish message successfully!" << std::endl;
+    if (instance->pollIn()) {
+      nbytes = recvfrom(instance->server_fd_, (char *)buffer, msg_size,  
+                  MSG_WAITALL, ( struct sockaddr *) &cliaddr, 
+                  &len);
+      if (nbytes > 0) {
+        SocketCommand* cmd = (SocketCommand*) buffer;
+        std::cout << "cmd >> " << *cmd << std::endl;
+        char* ptr = buffer + sizeof(SocketCommand);
+        char topic_buffer[32];
+        for (int i = 0; i < 32; ++i) {
+          topic_buffer[i] = ptr[i];
+        }
+        std::string topic(topic_buffer);
+        std::cout << "topic >> " << topic << std::endl;
+        switch(*cmd) {
+          case SocketCommand::kPublish:
+          {
+            std::list<struct sockaddr_in*>* subscriber_lists = SocketFilter::GetSubscribers(topic);
+            *cmd = SocketCommand::kSubcribe;
+            if (subscriber_lists != nullptr) {
+              for (auto addr : (*subscriber_lists)) {
+                std::cout << "addr->sin_port >> " << addr->sin_port << std::endl;
+                int n_bytes = sendto(instance->server_fd_, (const char *)buffer, nbytes, 
+                  MSG_CONFIRM, (const struct sockaddr *) addr,  
+                      sizeof(sockaddr_in));
+                if (n_bytes == -1) {
+                  std::cout << "Socket Publisher Service forward publish message failed!" << std::endl;
+                }
+                else {
+                  std::cout << "Socket Publisher Service forward publish message successfully!" << std::endl;
+                }
               }
             }
+            else {
+              std::cout << "Subscriber list is empty!" << std::endl;
+            }
+            break;
           }
-          else {
-            std::cout << "Subscriber list is empty!" << std::endl;
-          }
-          break;
+          default:
+            std::cout << "Doesn't support this command for Publisher!" << std::endl;
+            break;
         }
-        default:
-          std::cout << "Doesn't support this command for Publisher!" << std::endl;
-          break;
       }
-		}
+    }
 	}
 }

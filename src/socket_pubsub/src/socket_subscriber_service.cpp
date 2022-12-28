@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/socket.h>
+#include <poll.h>
 #include <unistd.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -36,7 +37,7 @@ bool SocketSubscriberService::StopSocketSubscriberService()
 {
 	this->is_stop_ = true;
 	if (close(this->server_fd_) == -1) {
-		std::cout << "Can not stop Subscriber!" << std::endl;
+		std::cout << "Can not stop Subscriber Service!" << std::endl;
 		return false;
 	}
 	else {
@@ -63,7 +64,7 @@ bool SocketSubscriberService::InitSocketSubscriberService()
   // servaddr.sin_addr.s_addr = INADDR_ANY;
   inet_aton("127.0.0.1", &servaddr.sin_addr);
   servaddr.sin_port = htons(10001);
-  fcntl(this->server_fd_, F_SETFL, O_NONBLOCK);
+  // fcntl(this->server_fd_, F_SETFL, O_NONBLOCK);
       
   // Bind the socket with the server address 
   if (bind(server_fd_, (const struct sockaddr *)&servaddr,  
@@ -78,6 +79,27 @@ bool SocketSubscriberService::InitSocketSubscriberService()
   return true;
 }
 
+bool SocketSubscriberService::pollIn()
+{
+  bool returnValue{false};
+  struct pollfd pfd;
+  pfd.fd = this->server_fd_;
+  pfd.events = POLLIN;
+
+  int pollReturn{-1};
+  pollReturn = poll(&pfd, 1, 1000);
+
+  if (pollReturn > 0)
+  {
+    if (pfd.revents & POLLIN)
+    {
+        returnValue = true;
+    }
+  }
+
+  return returnValue;
+}
+
 void SocketSubscriberService::StartListening(SocketSubscriberService* instance)
 {
 	struct sockaddr_in cliaddr;
@@ -87,30 +109,32 @@ void SocketSubscriberService::StartListening(SocketSubscriberService* instance)
 	int nbytes;
 
 	while (!instance->is_stop_) {
-		nbytes = recvfrom(instance->server_fd_, (char *)buffer, msg_size,  
-                MSG_WAITALL, ( struct sockaddr *) &cliaddr, 
-                &len);
-		if (nbytes > 0) {
-			SocketCommand* cmd = (SocketCommand*) buffer;
-			std::cout << "cmd >> " << *cmd << std::endl;
-			char* ptr = buffer + sizeof(SocketCommand);
-			char topic_buffer[32];
-			for (int i = 0; i < 32; ++i) {
-				topic_buffer[i] = ptr[i];
-			}
-			std::string topic(topic_buffer);
-			std::cout << "topic >> " << topic << std::endl;
-			
-			switch(*cmd) {
-				case SocketCommand::kRegister:
-					SocketFilter::AddSubscriber(topic, &cliaddr);
-					break;
-				case SocketCommand::kUnregister:
-					SocketFilter::RemoveSubscriber(topic, &cliaddr);
-					break;
-				default:
-					std::cout << "Doesn't support this command for subscriber!" << std::endl;
-					break;
+		if (instance->pollIn()) {
+			nbytes = recvfrom(instance->server_fd_, (char *)buffer, msg_size,  
+	                MSG_WAITALL, ( struct sockaddr *) &cliaddr, 
+	                &len);
+			if (nbytes > 0) {
+				SocketCommand* cmd = (SocketCommand*) buffer;
+				std::cout << "cmd >> " << *cmd << std::endl;
+				char* ptr = buffer + sizeof(SocketCommand);
+				char topic_buffer[32];
+				for (int i = 0; i < 32; ++i) {
+					topic_buffer[i] = ptr[i];
+				}
+				std::string topic(topic_buffer);
+				std::cout << "topic >> " << topic << std::endl;
+				
+				switch(*cmd) {
+					case SocketCommand::kRegister:
+						SocketFilter::AddSubscriber(topic, &cliaddr);
+						break;
+					case SocketCommand::kUnregister:
+						SocketFilter::RemoveSubscriber(topic, &cliaddr);
+						break;
+					default:
+						std::cout << "Doesn't support this command for subscriber!" << std::endl;
+						break;
+				}
 			}
 		}
 	}
